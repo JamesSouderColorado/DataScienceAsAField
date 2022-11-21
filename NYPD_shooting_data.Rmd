@@ -1,0 +1,108 @@
+---
+title: "NYPD Shooting Data"
+author: "James Souder"
+date: "2022-11-02"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+```
+
+# Data
+The data is a list of each shooting incident in New York City since 2006 to the end of the previous calendar year. The data is extracted manually and reviewed by a governing board prior to being posted on the NYPD website. Each shooting incident is described by features including location, precinct, boro, and a murder flag. There are also victim and perpetrator demographics recorded.
+
+``` {r load_data, message=FALSE}
+shooting_data <- read_csv('https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD')
+# SUMMARY of raw data
+summary(shooting_data)
+```
+### Tidying Data
+```{r cleanup, include=TRUE}
+# Drop unnecessary columns 
+shooting_data <- shooting_data %>%
+  select(-c(INCIDENT_KEY,JURISDICTION_CODE,
+            X_COORD_CD,Y_COORD_CD,Latitude,Longitude,Lon_Lat)) %>%
+  #Change to Date type
+  mutate(OCCUR_DATE=mdy(OCCUR_DATE))
+shooting_data
+```
+
+### Missing Data
+I plan to address the missing data by first identifying the columns containing
+a large amount of NA's. See examples below. Some columns may be dropped if most of the values are NA. Otherwise, we will keep the values containing NA and drop the NA rows when doing specific analyses. This is because we may want to only drop the NA rows — if a specific column is NA — for a particular analysis.
+
+``` {r countNA, include=TRUE}
+# Check for NA's in character type variables e.g. LOCATION_DESC
+shooting_data %>%
+  select(LOCATION_DESC) %>%
+  table(useNA='always') %>%
+  print()
+shooting_data %>%
+  select(PERP_AGE_GROUP) %>%
+  table(useNA='always') %>%
+  print()
+```
+# Visualization
+### Plotting Murder by BORO
+
+``` {r visualise1, include=TRUE}
+# Create table data
+plot_data <- shooting_data %>%
+  group_by(BORO) %>%
+  summarize(murder = sum(STATISTICAL_MURDER_FLAG))
+plot_data
+
+plot_data %>% 
+  ggplot(aes(x = BORO, y = murder)) + 
+  geom_bar(stat = 'identity') + 
+  labs(title = "Murders in Each BORO",
+       x = 'BORO',
+       y = 'Murders')
+```
+### Plotting Murder by LOCATION_DESC
+
+```{r visualize2, include=TRUE}
+plot_data <- shooting_data %>%
+  group_by(LOCATION_DESC) %>%
+  summarize(murder = sum(STATISTICAL_MURDER_FLAG)) %>%
+  filter(murder > 100) %>%
+  drop_na()
+print(plot_data, n=40)
+
+plot_data %>% 
+  ggplot(aes(x = LOCATION_DESC, y = murder)) + 
+  geom_bar(stat = 'identity') + 
+  labs(title = "Murders in Each Location",
+       x = 'Location',
+       y = 'Murders') +
+  theme(axis.text.x = element_text(size = 12, angle = 90, hjust=1))
+```
+# Analysis
+### Analysis - What percentage of crimes were murder?
+Interestingly, the murders as a percentage of crime were similar across boros.This analysis begs the question of what are the murders as a percentage of crime for each location description?
+``` {r murder, echo=TRUE}
+crimes_counts <- shooting_data %>%
+  group_by(BORO) %>%
+  count(name='crimes')
+plot_data <- shooting_data %>%
+  group_by(BORO) %>%
+  summarize(murder = sum(STATISTICAL_MURDER_FLAG))
+murder_data <- merge(plot_data, crimes_counts) %>%
+  mutate(murder_rate = murder/crimes)
+murder_data
+
+murder_data %>% 
+  ggplot(aes(x = BORO, y = murder_rate)) + 
+  geom_bar(stat = 'identity') + 
+  labs(title = "Murder Rate (Murder per Shooting) in Each BORO",
+       x = 'Boro',
+       y = 'Murder Rate')
+```
+# Conclusion
+In this project, visualizations were created and used to help inform the analysis. Barplots were utilized to visualize the counts of crimes for each BORO (and location descriptions) in order to quickly see and compare the differences between BOROs. Further, we analyzed the percentage of crimes that were murders for the same features.
+Bias was present in this analysis for a few reasons. First, by choosing what analysis to perform, and what not to perform, creates a bias because what was chosen to be analyzed could produce some outcome. A simple example of this would be analyzing the perpetrators race for biased reasons. This could be mitigated by doing further analysis answering a wide variety of questions with the data. Also, bias was present due to the amount of NA values. We don't know what value the NA would really take on and could have had significant impact if the NAs had some sort of pattern or specific impact. This really can't be mitigated because that is the way the data comes, but we can choose to drop NA values and just use the remaining data.
